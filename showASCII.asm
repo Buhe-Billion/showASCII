@@ -8,7 +8,11 @@
 ;NASM                       : 2.14.02
 ;
 
+;------------------------------------------------------------------------------------------------------------------
+
 SECTION .data
+
+GLOBAL CLRHOME, CLRLEN, SYS_WRITE_CALL_VAL, STDOUT_FD, FILLCHR, EOL, RULERSTRING
 
 SYS_WRITE_CALL_VAL EQU 1
 STDERR_FD          EQU 2
@@ -34,13 +38,60 @@ CLRLEN             EQU $-CLRHOME
 RULERSTRING        DB  "12345678901234567890123456789012345678901234567890123456789012345678901234567890"
 RULERLEN           EQU  $-RULERSTRING
 
+;------------------------------------------------------------------------------------------------------------------
+
 SECTION .bss
 
 COLS               EQU  81         ; Line length + 1 char for EOL
 ROWS               EQU  25         ; Number of lines in display
 VIDEOBUFFER        RESB COLS*ROWS  ; Buffer size adapts to ROWS & COLS
 
+;------------------------------------------------------------------------------------------------------------------
+
 SECTION .text
 
 GLOBAL _start
-EXTERN CLEARTERMINAL, CLEARVID, RULER, SHOW 
+EXTERN CLEARTERMINAL, CLEARVID, RULER, SHOW
+
+_start:
+MOV RBP,RSP             ;Tis 4 debugging
+
+; Get the console and text display text buffer ready to go:
+CALL CLEARTERMINAL      ;Send terminal clear string to console
+CALL CLEARVID           ;Init/Clear the video buffer
+
+;Show a 64 character ruler above the table display:
+MOV RAX,1               ; Start ruler at display position 1,1
+MOV RBX,1
+MOV RCX,32              ; Make ruler 32 characters wide
+CALL RULER              ; Generate the ruler
+
+; Now let's generate the chart itself:
+MOV RDI,VIDEOBUFFER     ; Start with buffer address in RDI
+ADD RDI,COLS*CHRTROW    ; Begin table display down CHRTROW lines
+MOV RCX,224             ; Show 256 chars minus first 32
+MOV AL,32               ; Start with char 32; others won't show
+
+.DOLN:
+MOV BL,CHRTLEN          ; Each line will consist of 32 chars
+.DOCHAR:
+STOSB                   ; Note that there's no REP prefix!
+JRCXZ ALLDONE           ; When the full set is printed, quit
+INC AL                  ; Bump the character value in AL up by 1
+DEC BL                  ; Decrement the line counter by one
+LOOPNZ .DOCHAR          ; Go back & do another char until BL goes to 0
+
+ADD RDI,COLS-CHRTLEN    ; Move RDI to start of next line
+JMP .DOLN               ; Start display of the next line {Moving up memory}
+
+; Having written all that to the buffer, send buffer to the console:
+ALLDONE:
+CALL SHOW
+
+EXIT:
+MOV RSP,RBP
+POP RBP
+
+MOV RAX,EXIT_SYSCALL
+MOV RDI,OK_RET_VAL
+SYSCALL
